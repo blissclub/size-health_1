@@ -553,14 +553,38 @@ table.mt td{padding:8px 11px;vertical-align:middle}
 <!-- STORE AVAILABILITY TAB -->
 <div id="view-avail" style="display:none"><div class="dash">
   <div class="soh-search-wrap">
-    <div style="padding:10px 16px 6px;font-size:11px;font-weight:600;color:var(--g600);text-transform:uppercase;letter-spacing:.06em">Style SOH Search <span style="font-size:10px;font-weight:400;color:var(--g400);text-transform:none">— type to find stock across stores</span></div>
-    <div style="padding:8px 16px 12px">
-      <input type="text" id="soh-prod-input" placeholder="Type product name (min 3 chars)..." autocomplete="off"
-        oninput="sohProdSearch()"
-        style="width:100%;font-size:12px;padding:7px 10px;border:0.5px solid var(--g200);border-radius:var(--rs);outline:none;font-family:inherit;box-sizing:border-box">
+    <div style="padding:10px 16px 6px;font-size:11px;font-weight:600;color:var(--g600);text-transform:uppercase;letter-spacing:.06em">Style SOH Search <span style="font-size:10px;font-weight:400;color:var(--g400);text-transform:none">(incl 20 Jul replen for 8 stores)</span></div>
+    <div style="padding:8px 16px 10px">
+      <div style="position:relative">
+        <input type="text" id="soh-prod-input" placeholder="Type product name (e.g. Ultimate Flare Pants)..." autocomplete="off"
+          oninput="sohProdSearch()"
+          style="width:100%;font-size:13px;padding:9px 12px;border:0.5px solid var(--g200);border-radius:var(--rs);outline:none;font-family:inherit;box-sizing:border-box">
+        <div id="soh-prod-drop" style="display:none;position:absolute;z-index:200;background:#fff;border:0.5px solid var(--g200);border-radius:var(--rs);box-shadow:0 4px 20px rgba(0,0,0,.12);max-height:260px;overflow-y:auto;width:100%;top:100%;left:0"></div>
+      </div>
     </div>
-    <div id="soh-result" class="soh-results" style="padding:0 16px 12px">
-      <span style="font-size:12px;color:var(--g400)">Type at least 3 characters to search...</span>
+    <div id="soh-filters-row" style="display:none;padding:0 16px 10px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg">
+        <label style="font-size:10px;font-weight:600;color:var(--g600);text-transform:uppercase;display:block;margin-bottom:3px">Color</label>
+        <select id="soh-color-sel" onchange="sohColorChange()" style="font-size:12px;padding:6px 10px;border:0.5px solid var(--g200);border-radius:var(--rs);outline:none;background:#fff;min-width:180px">
+          <option value="">All colors</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label style="font-size:10px;font-weight:600;color:var(--g600);text-transform:uppercase;display:block;margin-bottom:3px">Size</label>
+        <select id="soh-size" onchange="sohRender()" style="font-size:12px;padding:6px 10px;border:0.5px solid var(--g200);border-radius:var(--rs);outline:none;background:#fff;min-width:90px">
+          <option value="">All sizes</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label style="font-size:10px;font-weight:600;color:var(--g600);text-transform:uppercase;display:block;margin-bottom:3px">Store</label>
+        <select id="soh-store" onchange="sohRender()" style="font-size:12px;padding:6px 10px;border:0.5px solid var(--g200);border-radius:var(--rs);outline:none;background:#fff;min-width:150px">
+          <option value="">All stores</option>
+        </select>
+      </div>
+      <div class="fg" style="align-self:flex-end"><button class="btn-reset" onclick="sohReset()">Reset</button></div>
+    </div>
+    <div id="soh-result" class="soh-results" style="padding:0 16px 14px">
+      <span style="font-size:12px;color:var(--g400)">Type a product name to search stock across stores.</span>
     </div>
   </div>
   <div style="background:#fff;border:0.5px solid var(--g200);border-radius:var(--r);overflow:hidden;margin-bottom:1.25rem">
@@ -1602,54 +1626,131 @@ function renderAvailStyle(){
   }).join("");
 }
 async function loadSOH(){if(SOH_DATA)return;[SOH_DATA,CBD_DATA2]=await Promise.all([_dec(SOH_B64),_dec(CBD_B64)]);}
+
 function sohProdSearch(){
-  if(!AVAIL_DATA)initAvail();
+  if(!AVAIL_DATA) initAvail();
   loadSOH();
   const q=document.getElementById("soh-prod-input").value.toLowerCase().trim();
-  const el=document.getElementById("soh-result");
-  if(!SOH_DATA||q.length<3){
-    el.innerHTML='<span style="font-size:12px;color:var(--g400)">Type at least 3 characters to search...</span>';
+  const drop=document.getElementById("soh-prod-drop");
+  if(!SOH_DATA||q.length<2){
+    drop.style.display="none"; sohProd=null;
+    document.getElementById("soh-filters-row").style.display="none";
+    document.getElementById("soh-result").innerHTML='<span style="font-size:12px;color:var(--g400)">Type a product name to search stock across stores.</span>';
     return;
   }
-  // Search across all product+color keys
-  const allKeys=[];
-  Object.keys(SOH_DATA).forEach(prod=>{
-    Object.keys(SOH_DATA[prod]).forEach(color=>{
-      const label=prod+" "+color;
-      if(label.toLowerCase().includes(q)) allKeys.push({prod,color,label,data:SOH_DATA[prod][color]});
+  const matches=Object.keys(SOH_DATA).filter(p=>p.toLowerCase().includes(q)).slice(0,12);
+  if(!matches.length){drop.style.display="none";return;}
+  drop.style.display="block";
+  drop.innerHTML=matches.map(p=>
+    '<div class="soh-prod-opt" onclick="sohPickProd(\''+p.replace(/'/g,"\\'")+'\')">'+p+'</div>'
+  ).join("");
+}
+
+function sohPickProd(name){
+  sohProd=name;
+  document.getElementById("soh-prod-input").value=name;
+  document.getElementById("soh-prod-drop").style.display="none";
+  // Populate color dropdown
+  const colors=Object.keys(SOH_DATA[name]||{}).sort();
+  const cSel=document.getElementById("soh-color-sel");
+  cSel.innerHTML='<option value="">All colors</option>';
+  colors.forEach(c=>cSel.add(new Option(c,c)));
+  // Populate size dropdown from all colors
+  const allSizes=new Set();
+  Object.values(SOH_DATA[name]||{}).forEach(d=>Object.keys(d.stores||{}).forEach(st=>Object.keys(d.stores[st]).forEach(sz=>allSizes.add(sz))));
+  const szSel=document.getElementById("soh-size");
+  szSel.innerHTML='<option value="">All sizes</option>';
+  [...allSizes].sort().forEach(s=>szSel.add(new Option(s,s)));
+  document.getElementById("soh-filters-row").style.display="flex";
+  sohColor=null; sohRender();
+}
+
+function sohColorChange(){
+  sohColor=document.getElementById("soh-color-sel").value||null;
+  // Update size dropdown based on selected color
+  if(sohProd){
+    const allSizes=new Set();
+    const colors=sohColor?[sohColor]:Object.keys(SOH_DATA[sohProd]||{});
+    colors.forEach(c=>{
+      Object.values((SOH_DATA[sohProd]?.[c]?.stores)||{}).forEach(szMap=>Object.keys(szMap).forEach(sz=>allSizes.add(sz)));
+    });
+    const szSel=document.getElementById("soh-size");
+    const cur=szSel.value;
+    szSel.innerHTML='<option value="">All sizes</option>';
+    [...allSizes].sort().forEach(s=>szSel.add(new Option(s,s)));
+    if(cur && allSizes.has(cur)) szSel.value=cur;
+  }
+  sohRender();
+}
+
+function sohReset(){
+  sohProd=null; sohColor=null;
+  document.getElementById("soh-prod-input").value="";
+  document.getElementById("soh-prod-drop").style.display="none";
+  document.getElementById("soh-color-sel").innerHTML='<option value="">All colors</option>';
+  document.getElementById("soh-size").innerHTML='<option value="">All sizes</option>';
+  document.getElementById("soh-filters-row").style.display="none";
+  document.getElementById("soh-result").innerHTML='<span style="font-size:12px;color:var(--g400)">Type a product name to search stock across stores.</span>';
+}
+
+function sohRender(){
+  if(!sohProd||!SOH_DATA) return;
+  const selSz=document.getElementById("soh-size").value;
+  const selSt=document.getElementById("soh-store").value;
+  const result=document.getElementById("soh-result");
+  const colors=sohColor?[sohColor]:Object.keys(SOH_DATA[sohProd]||{});
+
+  // Merge store SOH across selected colors
+  const merged={};
+  colors.forEach(c=>{
+    const storeData=(SOH_DATA[sohProd]?.[c]?.stores)||{};
+    Object.entries(storeData).forEach(([st,szMap])=>{
+      if(!merged[st]) merged[st]={};
+      Object.entries(szMap).forEach(([sz,qty])=>{ merged[st][sz]=(merged[st][sz]||0)+qty; });
     });
   });
-  if(!allKeys.length){el.innerHTML='<span style="font-size:12px;color:var(--g400)">No styles found.</span>';return;}
-  const top=allKeys.slice(0,4);
-  el.innerHTML=top.map(({prod,color,label,data})=>{
-    const stores=data.stores||{};
-    const withStock=Object.entries(stores).filter(([,szMap])=>Object.values(szMap).some(v=>v>0));
-    const total=withStock.reduce((a,[,m])=>a+Object.values(m).reduce((x,y)=>x+y,0),0);
-    const pills=withStock.sort((a,b)=>{
-      const aTot=Object.values(a[1]).reduce((x,y)=>x+y,0);
-      const bTot=Object.values(b[1]).reduce((x,y)=>x+y,0);
-      return bTot-aTot;
-    }).map(([st,szMap])=>{
-      const stTot=Object.values(szMap).reduce((a,b)=>a+b,0);
-      const bg=stTot>20?"var(--green-lt)":stTot>0?"var(--amber-lt)":"var(--red-lt)";
-      const clr=stTot>20?"var(--green)":stTot>0?"var(--amber)":"var(--red)";
-      return '<span style="font-size:10px;background:'+bg+';color:'+clr+';padding:2px 8px;border-radius:20px;cursor:default" title="'+Object.entries(szMap).map(([s,q])=>s+':'+q).join(' ')+'">'+st.replace(/BC-|BC /g,"")+': '+stTot+'</span>';
-    }).join("");
-    return '<div style="background:var(--g50);border-radius:var(--rs);padding:10px 13px;margin-bottom:7px">'+
-      '<div style="font-size:12px;font-weight:600;color:var(--navy);margin-bottom:3px">'+prod+' <span style="color:var(--g400);font-weight:400">'+color+'</span></div>'+
-      '<div style="font-size:11px;color:var(--g600);margin-bottom:7px">Total: '+total+' units · In stock at '+withStock.length+' stores</div>'+
-      '<div style="display:flex;gap:5px;flex-wrap:wrap">'+
-        (pills||'<span style="font-size:11px;color:var(--red)">No stock in any store</span>')+
-      '</div></div>';
-  }).join("")+(allKeys.length>4?'<div style="font-size:11px;color:var(--g400);margin-top:6px">'+allKeys.length+' matches — type more to narrow down</div>':'');
+
+  let storeEntries=Object.entries(merged);
+  if(selSt) storeEntries=storeEntries.filter(([st])=>st===selSt);
+  else storeEntries=storeEntries.filter(([,szMap])=>selSz?(szMap[selSz]||0)>0:Object.values(szMap).some(v=>v>0));
+  storeEntries.sort((a,b)=>{
+    const aT=selSz?(a[1][selSz]||0):Object.values(a[1]).reduce((x,y)=>x+y,0);
+    const bT=selSz?(b[1][selSz]||0):Object.values(b[1]).reduce((x,y)=>x+y,0);
+    return bT-aT;
+  });
+  const totalStock=storeEntries.reduce((a,[,m])=>a+(selSz?(m[selSz]||0):Object.values(m).reduce((x,y)=>x+y,0)),0);
+
+  const colorLabel=sohColor?(' · <span style="color:var(--coral)">'+sohColor+'</span>'):'';
+  const sizeLabel=selSz?(' · <span style="color:var(--blue);font-weight:700">Size: '+selSz+'</span>'):'';
+
+  const cards=storeEntries.map(([st,szMap])=>{
+    const display=selSz?{[selSz]:szMap[selSz]||0}:Object.fromEntries(Object.entries(szMap).sort((a,b)=>a[0].localeCompare(b[0])));
+    const stTot=Object.values(display).reduce((a,b)=>a+b,0);
+    const chips=Object.entries(display).map(([sz,qty])=>
+      '<span class="soh-sz '+(qty>=10?"hi":qty>0?"lo":"z")+'">'+sz+': '+qty+'</span>'
+    ).join("");
+    return '<div class="soh-store-card">'+
+      '<div class="soh-store-nm">'+st.replace(/BC-|BC /g,"")+'</div>'+
+      '<div class="soh-sizes">'+chips+'</div>'+
+      '<div style="font-size:10px;color:var(--g400);margin-top:4px">Total: '+stTot+'</div>'+
+    '</div>';
+  }).join("");
+
+  result.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:600;color:var(--navy)">'+sohProd+colorLabel+sizeLabel+'</div>'+
+      '<div style="font-size:11px;color:var(--g600)">'+storeEntries.length+' stores · '+totalStock+' units</div>'+
+    '</div>'+
+    '<div class="soh-grid">'+(cards||'<div style="font-size:12px;color:var(--g400)">No stock found.</div>')+'</div>';
 }
-function sohReset(){
-  sohProd=null;sohColor=null;
-  document.getElementById("soh-prod-input").value="";
-  document.getElementById("soh-result").innerHTML='<span style="font-size:12px;color:var(--g400)">Type at least 3 characters to search...</span>';
+
+function sohDrillIn(prod,color){
+  sohProd=prod; sohColor=color;
+  document.getElementById("soh-prod-input").value=prod;
+  sohPickProd(prod);
+  document.getElementById("soh-color-sel").value=color;
+  sohColorChange();
 }
-function sohRender(){}
-function sohDrillIn(prod,color){document.getElementById("soh-prod-input").value=prod+" "+color;sohProdSearch();}
 
 async function init(){
   const bin=atob(B64),bytes=new Uint8Array(bin.length);
